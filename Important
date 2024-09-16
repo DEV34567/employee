@@ -1,0 +1,584 @@
+import React from "react";
+import { useNavigate } from "react-router-dom"; // Import useNavigate
+import axios from "axios";
+
+const UserDashboard = ({ setIsAuthenticated, setUserRole }) => {
+  const navigate = useNavigate(); // Initialize useNavigate
+
+  // Handle Logout
+  const handleLogout = async () => {
+    try {
+      await axios.post("http://localhost:5000/api/logout", {}, { withCredentials: true });
+      setIsAuthenticated(false);
+      setUserRole(null);
+      navigate("/"); // Redirect to login page
+    } catch (error) {
+      console.error("Error during logout:", error);
+    }
+  };
+
+  return (
+    <div>
+      <h2>User Dashboard</h2>
+      <button onClick={handleLogout}>Logout</button> {/* Logout button */}
+      <p>Welcome to your dashboard!</p>
+    </div>
+  );
+};
+
+export default UserDashboard;
+
+
+import React, { useState } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
+
+const Login = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false); // New state to track if it's an admin login
+  const navigate = useNavigate();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await axios.post(
+        `http://localhost:5000/api/${isAdmin ? "admin/login" : "login"}`, // URL changes based on isAdmin
+        {
+          email,
+          password,
+        },
+        { withCredentials: true } // Ensure cookies are sent for session management
+      );
+
+      if (response.status === 200) {
+        // Store user information in localStorage or context
+        localStorage.setItem("user_id", response.data.id);
+        localStorage.setItem("role", response.data.role);
+
+        // Redirect based on role
+        if (response.data.role === "admin") {
+          navigate("/admin-dashboard");
+        } else {
+          navigate("/user-dashboard");
+        }
+      }
+    } catch (error) {
+      setError("Invalid email or password");
+    }
+  };
+
+  return (
+    <div>
+      <h2>Login</h2>
+      <form onSubmit={handleLogin}>
+        <input
+          type="email"
+          placeholder="Enter email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          placeholder="Enter password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        
+        {/* Checkbox to select admin login */}
+        <label>
+          <input
+            type="checkbox"
+            checked={isAdmin}
+            onChange={(e) => setIsAdmin(e.target.checked)} // Update isAdmin state
+          />
+          Login as Admin
+        </label>
+
+        <button type="submit">Login</button>
+        {error && <p>{error}</p>}
+      </form>
+    </div>
+  );
+};
+
+export default Login;
+
+
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom"; // Import useNavigate for redirecting
+
+const AdminDashboard = ({ setIsAuthenticated, setUserRole }) => {
+  const [users, setUsers] = useState([]);
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", department: "" });
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [editedUser, setEditedUser] = useState({ name: "", email: "", department: "" });
+  const [error, setError] = useState("");
+  const navigate = useNavigate(); // Initialize useNavigate
+
+  // Check admin authentication
+  useEffect(() => {
+    const checkAdminAuthentication = async () => {
+      try {
+        const response = await axios.get("http://localhost:5000/api/users", { withCredentials: true });
+        // User is authenticated if we get a successful response
+        if (response.status !== 200) {
+          throw new Error("Unauthorized");
+        }
+      } catch (error) {
+        console.error("Error checking admin authentication:", error);
+        navigate("/login"); // Redirect to login page if not authenticated
+      }
+    };
+
+    checkAdminAuthentication();
+  }, [navigate]);
+
+  // Fetch all users
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axios.get("http://localhost:5000/api/users", { withCredentials: true });
+        console.log("Fetch Users Response:", response); // Debug response
+        setUsers(response.data);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        if (error.response && error.response.status === 403) {
+          setError("Unauthorized access: Only admins can view this page.");
+        } else {
+          setError("Error fetching user data.");
+        }
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  // Handle input changes for new and edited users
+  const handleInputChange = (e, setFunction) => {
+    const { name, value } = e.target;
+    setFunction((prevState) => ({ ...prevState, [name]: value }));
+  };
+
+  // Add a new employee
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await axios.post("http://localhost:5000/api/users", newUser, { withCredentials: true });
+      console.log("Add User Response:", response); // Debug response
+      setUsers([...users, response.data]);
+      setNewUser({ name: "", email: "", password: "", department: "" });
+      alert("Employee added successfully!");
+    } catch (error) {
+      console.error("Error adding user:", error);
+      if (error.response && error.response.status === 403) {
+        setError("Unauthorized: Only admins can add employees.");
+      } else {
+        setError("Error adding user.");
+      }
+    }
+  };
+
+  // Edit an existing user
+  const handleEditClick = (user) => {
+    setSelectedUser(user);
+    setEditedUser({ name: user.name, email: user.email, department: user.department });
+  };
+
+  // Submit updated user details
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await axios.put(`http://localhost:5000/api/users/${selectedUser.id}`, editedUser, { withCredentials: true });
+      console.log("Update User Response:", response); // Debug response
+      setUsers(users.map((user) => (user.id === selectedUser.id ? { ...user, ...editedUser } : user)));
+      setSelectedUser(null);
+      alert("User updated successfully!");
+    } catch (error) {
+      console.error("Error updating user:", error);
+      if (error.response && error.response.status === 403) {
+        setError("Unauthorized: Only admins can update employees.");
+      } else {
+        setError("Error updating user.");
+      }
+    }
+  };
+
+  // Delete a user
+  const handleDeleteUser = async (id) => {
+    try {
+      await axios.delete(`http://localhost:5000/api/users/${id}`, { withCredentials: true });
+      setUsers(users.filter((user) => user.id !== id));
+      alert("User deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      if (error.response && error.response.status === 403) {
+        setError("Unauthorized: Only admins can delete employees.");
+      } else {
+        setError("Error deleting user.");
+      }
+    }
+  };
+
+  // Handle Logout
+  const handleLogout = async () => {
+    try {
+      await axios.post("http://localhost:5000/api/logout", {}, { withCredentials: true });
+      setIsAuthenticated(false);
+      setUserRole(null);
+      navigate("/"); // Redirect to login page
+    } catch (error) {
+      console.error("Error during logout:", error);
+    }
+  };
+
+  return (
+    <div>
+      <h2>Admin Dashboard</h2>
+      <button onClick={handleLogout}>Logout</button> {/* Logout button */}
+
+      {/* Display errors */}
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      {/* List of Users in a Table */}
+      <h3>All User Records</h3>
+      <table border="1">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Department</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((user) => (
+            <tr key={user.id}>
+              <td>{user.name}</td>
+              <td>{user.email}</td>
+              <td>{user.role}</td>
+              <td>{user.department || "No Department"}</td>
+              <td>
+                <button onClick={() => handleEditClick(user)}>Edit</button>
+                <button onClick={() => handleDeleteUser(user.id)}>Delete</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Add User Form */}
+      <div>
+        <h3>Add New Employee</h3>
+        <form onSubmit={handleAddUser}>
+          <input
+            type="text"
+            name="name"
+            placeholder="Name"
+            value={newUser.name}
+            onChange={(e) => handleInputChange(e, setNewUser)}
+            required
+          />
+          <input
+            type="email"
+            name="email"
+            placeholder="Email"
+            value={newUser.email}
+            onChange={(e) => handleInputChange(e, setNewUser)}
+            required
+          />
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            value={newUser.password}
+            onChange={(e) => handleInputChange(e, setNewUser)}
+            required
+          />
+          <input
+            type="text"
+            name="department"
+            placeholder="Department"
+            value={newUser.department}
+            onChange={(e) => handleInputChange(e, setNewUser)}
+          />
+          <button type="submit">Add Employee</button>
+        </form>
+      </div>
+
+      {/* Edit User Form */}
+      {selectedUser && (
+        <div>
+          <h3>Edit User</h3>
+          <form onSubmit={handleUpdateUser}>
+            <input
+              type="text"
+              name="name"
+              value={editedUser.name}
+              onChange={(e) => handleInputChange(e, setEditedUser)}
+              required
+            />
+            <input
+              type="email"
+              name="email"
+              value={editedUser.email}
+              onChange={(e) => handleInputChange(e, setEditedUser)}
+              required
+            />
+            <input
+              type="text"
+              name="department"
+              value={editedUser.department}
+              onChange={(e) => handleInputChange(e, setEditedUser)}
+            />
+            <button type="submit">Save Changes</button>
+            <button type="button" onClick={() => setSelectedUser(null)}>
+              Cancel
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AdminDashboard;
+
+import React, { useState, useEffect } from "react";
+import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
+import Login from "./components/Login";
+import AdminDashboard from "./components/AdminDashboard";
+import UserDashboard from "./components/UserDashboard";
+import axios from "axios";
+
+const App = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState(null); // To store the user's role
+
+  // Check if the user is authenticated and fetch their role
+  useEffect(() => {
+    const checkAuthentication = async () => {
+      try {
+        const response = await axios.get("http://localhost:5000/api/auth/check", { withCredentials: true });
+        if (response.status === 200) {
+          setIsAuthenticated(true);
+          setUserRole(response.data.role); // Assuming the role is returned in the response
+        }
+      } catch (error) {
+        console.error("Error checking authentication:", error);
+      }
+    };
+
+    checkAuthentication();
+  }, []);
+
+  // Private Route component
+  const PrivateRoute = ({ element, roles }) => {
+    if (!isAuthenticated) {
+      return <Navigate to="/" />;
+    }
+
+    if (roles && !roles.includes(userRole)) {
+      return <Navigate to="/" />; // Redirect if the user doesn't have the right role
+    }
+
+    return element;
+  };
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/admin-dashboard" element={<PrivateRoute element={<AdminDashboard />} roles={['admin']} />} />
+        <Route path="/user-dashboard" element={<PrivateRoute element={<UserDashboard />} roles={['employee']} />} />
+      </Routes>
+    </Router>
+  );
+};
+
+export default App;
+
+
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+
+const PrivateRoute = ({ children, role }) => {
+  const isAuthenticated = () => {
+    return sessionStorage.getItem('user') !== null; // Check if user is logged in
+  };
+
+  const userRole = () => {
+    const user = JSON.parse(sessionStorage.getItem('user'));
+    return user ? user.role : null; // Get user role from session storage
+  };
+
+  // Check if the user is authenticated and has the right role
+  if (!isAuthenticated() || (role && role !== userRole())) {
+    return <Navigate to="/login" replace />; // Redirect to login if not authenticated or incorrect role
+  }
+
+  return children; // Render the component if authentication and role check pass
+};
+
+export default PrivateRoute;
+
+
+
+from flask import Flask, request, jsonify, session
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+from flask_cors import CORS
+from datetime import datetime
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:NewPassword123@localhost/employee_db'
+app.config['SECRET_KEY'] = 'shubham'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# CORS setup with support for credentials (for session management)
+CORS(app, supports_credentials=True)
+
+# Flask session cookie settings for better handling across different ports and domains
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True when using HTTPS
+
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+
+# Combined User and Employee Model
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    role = db.Column(db.String(10), nullable=False)  # 'admin' or 'employee'
+    department = db.Column(db.String(100), nullable=True)
+    password_hash = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+
+# User Registration (Admin Only)
+@app.route('/api/register', methods=['POST'])
+def register_admin():
+    data = request.json
+    if not all(key in data for key in ('name', 'email', 'password')):
+        return jsonify({"message": "Missing required fields"}), 400
+
+    hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+    new_user = User(
+        name=data['name'], 
+        email=data['email'], 
+        role='admin',  # By default, this is an admin registration
+        password_hash=hashed_password
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({"message": "Admin registered successfully"}), 201
+
+# User Login
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    user = User.query.filter_by(email=data.get('email')).first()
+    if user and bcrypt.check_password_hash(user.password_hash, data.get('password')):
+        session['user_id'] = user.id
+        session['role'] = user.role
+        session.permanent = True  # Make the session permanent
+        print("Session set:", session)  # Debug: Check the session
+        return jsonify({"message": "Login successful", "role": user.role, "id": user.id}), 200
+    return jsonify({"message": "Invalid credentials"}), 401
+
+# Admin Login
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    data = request.json
+    user = User.query.filter_by(email=data.get('email')).first()
+    if user and user.role == 'admin' and bcrypt.check_password_hash(user.password_hash, data.get('password')):
+        session['user_id'] = user.id
+        session['role'] = user.role
+        session.permanent = True  # Make the session permanent
+        print("Session set for admin:", session)  # Debug: Check the session
+        return jsonify({"message": "Admin login successful", "role": user.role, "id": user.id}), 200
+    return jsonify({"message": "Invalid credentials or not an admin"}), 401
+
+# Authentication Check Endpoint
+@app.route('/api/auth/check', methods=['GET'])
+def check_auth():
+    if 'user_id' in session and 'role' in session:
+        return jsonify({"message": "Authenticated", "role": session['role']}), 200
+    return jsonify({"message": "Unauthorized"}), 401
+
+# Logout Endpoint
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.clear()  # Clear the session
+    return jsonify({"message": "Logged out successfully"}), 200
+
+# Get All Users (Admin Only)
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    print("Current session in get_users:", session)  # Debug: Check session content
+    if 'role' in session and session['role'] == 'admin':
+        users = User.query.all()
+        users_data = [
+            {"id": user.id, "name": user.name, "email": user.email, "role": user.role, "department": user.department}
+            for user in users
+        ]
+        return jsonify(users_data), 200
+    return jsonify({"message": "Unauthorized: Only admins can view all users"}), 403
+
+# Add New User (Admin Only)
+@app.route('/api/users', methods=['POST'])
+def add_user():
+    print("Current session in add_user:", session)  # Debug: Check session content
+    if 'role' in session and session['role'] == 'admin':
+        data = request.json
+        hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+        new_user = User(
+            name=data['name'],
+            email=data['email'],
+            role='employee',  # Default new user is an employee
+            department=data.get('department', None),
+            password_hash=hashed_password
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({"message": "Employee added successfully!"}), 201
+    return jsonify({"message": "Unauthorized: Only admins can add employees"}), 403
+
+# Update User (Admin Only)
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    print("Current session in update_user:", session)  # Debug: Check session content
+    if 'role' in session and session['role'] == 'admin':
+        data = request.json
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+        user.name = data.get('name', user.name)
+        user.email = data.get('email', user.email)
+        user.department = data.get('department', user.department)
+        db.session.commit()
+        return jsonify({"message": "User updated successfully!"}), 200
+    return jsonify({"message": "Unauthorized: Only admins can update users"}), 403
+
+# Delete User (Admin Only)
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    print("Current session in delete_user:", session)  # Debug: Check session content
+    if 'role' in session and session['role'] == 'admin':
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"message": "User deleted successfully!"}), 200
+    return jsonify({"message": "Unauthorized: Only admins can delete users"}), 403
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
